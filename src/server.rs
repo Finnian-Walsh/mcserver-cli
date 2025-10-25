@@ -1,13 +1,11 @@
 use crate::{
-    config::{self, get_current_server_directory, get_expanded_servers_dir},
+    config::{self, get_expanded_servers_dir, server_or_current},
     error::{Error, Result},
     platforms::Platform,
     session,
-    template::is_template,
 };
 use reqwest::{blocking, header};
 use std::{
-    cell::OnceCell,
     collections::HashSet,
     env,
     fmt::{self, Display, Formatter},
@@ -45,8 +43,8 @@ fn copy_jar(server_dir: impl AsRef<Path>, file_name: String, mut jar: impl io::R
     let mut jar_file = File::create(&file_name)?;
     io::copy(&mut jar, &mut jar_file)?;
 
-    let mut jarfile_txt = File::create("jarfile.txt")?;
-    writeln!(jarfile_txt, "{file_name}")?;
+    let mut jar_file_txt = File::create("jar_file.txt")?;
+    writeln!(jar_file_txt, "{file_name}")?;
 
     Ok(())
 }
@@ -92,11 +90,7 @@ pub fn remove_servers(servers: Vec<String>) -> Result<()> {
     let all_servers = get_all_hashed()?;
 
     for server in servers {
-        let server = if server == "." {
-            get_current_server_directory()?
-        } else {
-            server
-        };
+        let server = server_or_current(server)?;
 
         if all_servers.get(&server).as_ref().is_none() {
             return Err(Error::ServerNotFound(server));
@@ -140,10 +134,7 @@ pub fn remove_servers_with_confirmation(servers: Vec<String>) -> Result<()> {
 }
 
 pub fn init(download_url: Url, platform: Platform, name: Option<String>) -> Result<()> {
-    let fallback_name: OnceCell<String> = OnceCell::new();
-    let get_fallback_name = || fallback_name.get_or_init(|| format!("{platform:?}").to_lowercase());
-
-    let name = name.unwrap_or_else(|| format!("{:?}-server", get_fallback_name()));
+    let name = name.unwrap_or_else(|| format!("{platform}-server"));
     let servers_dir = &get_expanded_servers_dir()?;
 
     let mut server_dir = servers_dir.join(&name);
@@ -163,6 +154,10 @@ pub fn init(download_url: Url, platform: Platform, name: Option<String>) -> Resu
 
     fs::create_dir_all(&server_dir)?;
 
+    reinit(download_url, server_dir, platform)
+}
+
+pub fn reinit(download_url: Url, server_dir: impl AsRef<Path>, platform: Platform) -> Result<()> {
     println!("Downloading from {download_url}...");
     let response = blocking::get(download_url)?;
 
@@ -174,7 +169,7 @@ pub fn init(download_url: Url, platform: Platform, name: Option<String>) -> Resu
         .and_then(|cd| cd.split("filename=\"").nth(1))
         .and_then(|slice| slice.split('"').next())
         .map(String::from)
-        .unwrap_or_else(|| format!("{}.jar", get_fallback_name()));
+        .unwrap_or_else(|| format!("{platform}.jar"));
 
     if let Err(err) = copy_jar(&server_dir, file_name, response) {
         remove_dir_with_retries(server_dir)?;
@@ -291,7 +286,7 @@ pub fn save_last_used(server: impl AsRef<Path>) -> Result<()> {
     Ok(())
 }
 
-fn get_server_dir_required(server: &str) -> Result<PathBuf> {
+pub fn get_server_dir_required(server: &str) -> Result<PathBuf> {
     let server_dir = get_expanded_servers_dir()?.join(server);
 
     if !server_dir.is_dir() {
@@ -302,19 +297,21 @@ fn get_server_dir_required(server: &str) -> Result<PathBuf> {
 }
 
 fn get_server_jar_path(server_dir: &Path) -> Result<PathBuf> {
-    let jarfile_txt = server_dir.join("jarfile.txt");
+    let jar_file_txt = server_dir.join("jar_file.txt");
 
-    if !jarfile_txt.is_file() {
-        return Err(Error::MissingFile { file: jarfile_txt });
+    if !jar_file_txt.is_file() {
+        return Err(Error::MissingFile { file: jar_file_txt });
     }
 
-    let jarfile_path = server_dir.join(fs::read_to_string(jarfile_txt)?.trim_end());
+    let jar_file_path = server_dir.join(fs::read_to_string(jar_file_txt)?.trim_end());
 
-    if !jarfile_path.is_file() {
-        return Err(Error::MissingFile { file: jarfile_path });
+    if !jar_file_path.is_file() {
+        return Err(Error::MissingFile {
+            file: jar_file_path,
+        });
     }
 
-    Ok(jarfile_path)
+    Ok(jar_file_path)
 }
 
 pub fn get_command(server: &str) -> Result<String> {
@@ -347,4 +344,82 @@ pub fn restart() -> Result<()> {
 
     save_last_used(server)?;
     session::write_line(&session_name, get_command(server)?)
+}
+
+const TEMPLATE_SUFFIX: &str = ".template";
+
+pub fn is_template(server: &str) -> bool {
+    server.ends_with(TEMPLATE_SUFFIX)
+}
+
+pub fn new_template(server: &str) -> Result<()> {
+    if is_template(server) {
+        return Err(Error::TemplateUsedForTemplate);
+    }
+    println!("Creating template using server {server}...");
+
+    let servers_dir = get_expanded_servers_dir()?;
+
+    let server_path = servers_dir.join(server);
+    if !server_path.exists() {
+        return Err(Error::ServerNotFound(server.to_string()));
+    }
+
+    let template_path = servers_dir.join(format!("{server}{TEMPLATE_SUFFIX}"));
+    if template_path.exists() {
+        return Err(Error::TemplateAlreadyExists(server.to_string()));
+    }
+
+    copy_directory(server_path, template_path)?;
+
+    Ok(())
+}
+
+fn get_first_server_path(servers_dir: impl AsRef<Path>, name: &str) -> PathBuf {
+    let path = servers_dir.as_ref().join(name);
+    if !path.exists() {
+        return path;
+    }
+
+    let mut number = 2;
+    loop {
+        let path = servers_dir.as_ref().join(format!("{name}-{number}"));
+        if !path.exists() {
+            break path;
+        }
+
+        number += 1;
+    }
+}
+
+pub fn from_template(template: &str, server: Option<&str>) -> Result<()> {
+    let servers_dir = get_expanded_servers_dir()?;
+
+    let template_path = if template.ends_with(TEMPLATE_SUFFIX) {
+        println!("Creating server from {template}");
+        servers_dir.join(template)
+    } else {
+        let template_name = format!("{template}{TEMPLATE_SUFFIX}");
+        println!("Creating server from {template_name}");
+        servers_dir.join(template_name)
+    };
+
+    if !template_path.exists() {
+        return Err(Error::TemplateNotFound(template.to_string()));
+    }
+
+    let server_path = match server {
+        Some(server) => {
+            let path = get_expanded_servers_dir()?.join(server);
+            if path.exists() {
+                return Err(Error::ServerAlreadyExists(server.to_string()));
+            }
+            path
+        }
+        None => get_first_server_path(servers_dir, template),
+    };
+
+    copy_directory(template_path, server_path)?;
+
+    Ok(())
 }
