@@ -4,10 +4,9 @@ mod config_defs;
 mod error;
 mod platforms;
 mod rcon;
+mod reinstaller;
 mod server;
 mod session;
-mod template;
-mod update;
 
 use clap::Parser;
 use cli::*;
@@ -17,6 +16,7 @@ fn main() -> Result<()> {
     color_eyre::install()?;
 
     let args = Cli::parse();
+    println!("Parsed!");
 
     match args.command {
         Commands::Attach { server } => session::attach(&unwrap_server_or_default!(server)?)
@@ -107,10 +107,10 @@ fn main() -> Result<()> {
                 .wrap_err_with(|| format!("Failed to stop server {}", &server))?;
         }
         Commands::Template { action } => match action {
-            TemplateCommands::New { server } => template::new(&server)
+            TemplateCommands::New { server } => server::new_template(&server)
                 .wrap_err_with(|| format!("Failed to create template with server {server}"))?,
             TemplateCommands::From { template, server } => {
-                template::from(&template, server.as_deref())
+                server::from_template(&template, server.as_deref())
                     .wrap_err_with(|| format!("Failed to use template {template}"))?
             }
         },
@@ -121,16 +121,28 @@ fn main() -> Result<()> {
             from_crate,
         } => {
             if let Some(path) = path {
-                update::with_path(&path)
+                reinstaller::with_path(&path)
                     .wrap_err(format!("Failed to update package with {}", path.display()))?
             } else if git {
-                update::with_git(commit).wrap_err("Failed to update package with git repo")?
+                reinstaller::with_git(commit).wrap_err("Failed to update package with git repo")?
             } else if from_crate {
-                update::with_crate().wrap_err("Failed to update package with crate")?
+                reinstaller::with_crate().wrap_err("Failed to update package with crate")?
             } else {
                 unreachable!("Clap ensures git or a path is provided")
             }
         }
+        Commands::Update {
+            server,
+            platform,
+            version,
+        } => server::reinit(
+            platforms::get(platform, version)
+                .wrap_err_with(|| "Failed to get download url for {platform} v{version}")?,
+            server::get_server_dir_required(&config::server_or_current(server)?)
+                .wrap_err("Failed to get server directory")?,
+            platform,
+        )
+        .wrap_err("Failed to update server")?,
     };
 
     config::CONFIG.write()?;

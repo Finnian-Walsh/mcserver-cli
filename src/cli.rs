@@ -1,4 +1,4 @@
-use crate::platforms;
+use crate::platforms::Platform;
 use clap::{ArgGroup, Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -45,7 +45,7 @@ pub enum Commands {
         #[arg(short, long)]
         force: bool,
 
-        session: Option<String>
+        session: Option<String>,
     },
 
     #[command(visible_alias = "dpl", about = "Deploy a server")]
@@ -82,13 +82,34 @@ pub enum Commands {
     #[command(about = "Create a new server")]
     New {
         #[clap(value_enum)]
-        platform: platforms::Platform,
+        platform: Platform,
 
         #[arg(short, long)]
         name: Option<String>,
 
         #[arg(short, long)]
         version: Option<String>,
+    },
+
+    #[command(visible_alias = "reinst", about = "Reinstall the server binary",
+        group(
+                ArgGroup::new("source")
+                    .args(&["git", "path", "from_crate"])
+                    .required(true)
+            )
+    )]
+    Reinstall {
+        #[arg(short = 'c', long = "crate")]
+        from_crate: bool,
+
+        #[arg(short, long)]
+        git: bool,
+
+        #[arg(long, requires = "git")]
+        commit: Option<String>,
+
+        #[arg(short, long)]
+        path: Option<PathBuf>,
     },
 
     #[command(visible_alias = "rm", about = "Remove a server")]
@@ -111,25 +132,13 @@ pub enum Commands {
         action: TemplateCommands,
     },
 
-    #[command(visible_alias = "reinst", about = "Reinstall the server binary",
-        group(
-                ArgGroup::new("source")
-                    .args(&["git", "path", "from_crate"])
-                    .required(true)
-            )
-    )]
-    Reinstall {
-        #[arg(short = 'c', long = "crate")]
-        from_crate: bool,
+    #[command(about = "Update a server's .jar file and reference")]
+    Update {
+        server: String,
 
-        #[arg(short, long)]
-        git: bool,
+        platform: Platform,
 
-        #[arg(long, requires = "git")]
-        commit: Option<String>,
-
-        #[arg(short, long)]
-        path: Option<PathBuf>,
+        version: Option<String>,
     },
 }
 
