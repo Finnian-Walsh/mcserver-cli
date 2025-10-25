@@ -9,7 +9,10 @@ use reqwest::{
     header::{HeaderMap, HeaderValue, USER_AGENT},
 };
 use serde::Deserialize;
-use std::sync::OnceLock;
+use std::{
+    fmt::{self, Display, Formatter},
+    sync::OnceLock,
+};
 use url::Url;
 
 static CLIENT: OnceLock<Client> = OnceLock::new();
@@ -179,6 +182,18 @@ pub enum Platform {
     Neoforge,
     Paper,
     Purpur,
+}
+
+impl Display for Platform {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Fabric => write!(f, "fabric"),
+            Self::Forge => write!(f, "forge"),
+            Self::Neoforge => write!(f, "neoforge"),
+            Self::Paper => write!(f, "paper"),
+            Self::Purpur => write!(f, "purpur"),
+        }
+    }
 }
 
 pub fn get(platform: Platform, version: Option<String>) -> Result<Url> {
