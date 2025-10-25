@@ -16,7 +16,6 @@ fn main() -> Result<()> {
     color_eyre::install()?;
 
     let args = Cli::parse();
-    println!("Parsed!");
 
     match args.command {
         Commands::Attach { server } => session::attach(&unwrap_server_or_default!(server)?)
