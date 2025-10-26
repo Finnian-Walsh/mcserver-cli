@@ -1,11 +1,10 @@
-use color_eyre::eyre::{Result, WrapErr};
+use anyhow::{anyhow, Context, Result};
 use quote::quote;
 use serde::Deserialize;
 use std::{
     env, fs,
     path::{Path, PathBuf},
 };
-use thiserror::Error;
 
 mod config_defs {
     include!("src/config_defs.rs");
@@ -90,15 +89,6 @@ mod config_defs {
 
 use config_defs::{DynamicConfig, StaticConfig};
 
-#[derive(Debug, Error)]
-enum Error {
-    #[error("Invalid configuration file")]
-    InvalidConfigurationFileType,
-
-    #[error("Configuration file does not exist")]
-    ConfigurationFileDoesNotExist,
-}
-
 #[derive(Debug, Deserialize)]
 struct Config {
     static_config: StaticConfig<String>,
@@ -136,7 +126,7 @@ fn handle_static_config(cargo_manifest_dir: &Path) -> Result<Option<StaticConfig
     build_log!("Static configuration is a file");
 
     let result = toml::from_str(
-        &fs::read_to_string(static_config_path).wrap_err("Failed to read configuration file")?,
+        &fs::read_to_string(static_config_path).context("Failed to read configuration file")?,
     );
 
     match result {
@@ -153,7 +143,6 @@ fn handle_static_config(cargo_manifest_dir: &Path) -> Result<Option<StaticConfig
 
 fn main() -> Result<()> {
     build_log!("Build script running...");
-    color_eyre::install()?;
     println!("cargo:rerun-if-changed=");
 
     let out_dir = PathBuf::new().join(env::var("OUT_DIR")?);
@@ -167,20 +156,20 @@ fn main() -> Result<()> {
 
     if !config_template_path.exists() {
         build_log!("Config path ({config_template_path:?}) does not exist");
-        return Err(Error::ConfigurationFileDoesNotExist.into());
+        return Err(anyhow!("Configuration template does not exist"));
     }
 
     build_log!("Configuration path exists ({config_template_path:?})");
 
     if !config_template_path.is_file() {
         build_log!("Configuration template should be a file",);
-        return Err(Error::InvalidConfigurationFileType.into());
+        return Err(anyhow!("Invalid configuration template"));
     }
 
     let config: Config = toml::from_str(
-        &fs::read_to_string(config_template_path).wrap_err("Failed to read configuration file")?,
+        &fs::read_to_string(config_template_path).context("Failed to read configuration file")?,
     )
-    .wrap_err("Failed to parse configuration file")?;
+    .context("Failed to parse configuration file")?;
 
     let static_config = match handle_static_config(&cargo_manifest_dir)? {
         Some(static_config) => {
@@ -196,13 +185,18 @@ fn main() -> Result<()> {
     let default_dynamic_config = config.default_dynamic_config;
 
     let tokens = quote! {
-        pub const STATIC_CONFIG: StaticConfig = #static_config;
-        pub static DEFAULT_DYNAMIC_CONFIG: std::sync::OnceLock<DynamicConfig> = std::sync::OnceLock::new();
+        mod generated_cfg {
+            use crate::config_defs::{StaticConfig, Password, RconConfig, DynamicConfig};
+            use std::sync::OnceLock;
 
-        pub fn get_default_dynamic_config() -> &'static DynamicConfig {
-            DEFAULT_DYNAMIC_CONFIG.get_or_init(||
-                #default_dynamic_config
-            )
+            pub const STATIC_CONFIG: StaticConfig = #static_config;
+            pub static DEFAULT_DYNAMIC_CONFIG: OnceLock<DynamicConfig> = OnceLock::new();
+
+            pub fn get_default_dynamic_config() -> &'static DynamicConfig {
+                DEFAULT_DYNAMIC_CONFIG.get_or_init(||
+                    #default_dynamic_config
+                )
+            }
         }
     };
 
@@ -224,9 +218,9 @@ fn main() -> Result<()> {
         fs::write(
             &dynamic_config_template_path,
             toml::to_string(&default_dynamic_config)
-                .wrap_err("Failed to serialize dynamic configuration")?,
+                .context("Failed to serialize dynamic configuration")?,
         )
-        .wrap_err_with(|| {
+        .with_context(|| {
             format!("Failed to write to the dynamic configuration path ({dynamic_config_template_path:?})")
         })?;
     }
