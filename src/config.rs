@@ -1,5 +1,5 @@
 use crate::{
-    config_defs::{DynamicConfig, Password, RconConfig, StaticConfig},
+    config_defs::{DynamicConfig, StaticConfig},
     error::{Error, GlobalMutex, Result},
 };
 use std::{
@@ -10,6 +10,7 @@ use std::{
 };
 
 include!(concat!(env!("OUT_DIR"), "/generated_cfg.rs"));
+pub use generated_cfg::*;
 
 pub struct AutoConfig {
     value: OnceLock<Mutex<DynamicConfig>>,
