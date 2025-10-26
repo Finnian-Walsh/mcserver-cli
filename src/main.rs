@@ -18,7 +18,7 @@ fn main() -> Result<()> {
     let args = Cli::parse();
 
     match args.command {
-        Commands::Attach { server } => session::attach(&unwrap_server_or_default!(server)?)
+        Commands::Attach { server } => session::attach(unwrap_server_or_default!(server)?)
             .wrap_err("Failed to attach to session session")?,
         Commands::Config { config_type } => match config_type {
             ConfigType::Static => println!("{:#?}", config::get_static()),
@@ -40,7 +40,7 @@ fn main() -> Result<()> {
         }
         Commands::Deploy { server } => {
             let server = unwrap_server_or_default!(server)?;
-            session::new_server(&server, Some(&server::get_command(&server)?))?;
+            session::new_server(&server, Some(server::get_command(&server)?))?;
         }
         Commands::Execute { server, commands } => {
             let session_name = session::get_name(unwrap_server_or_default!(server)?);
@@ -79,7 +79,7 @@ fn main() -> Result<()> {
             }
         }
         Commands::Rcon { server, commands } => {
-            rcon::run(&unwrap_server_or_default!(server)?, &commands)
+            rcon::run(unwrap_server_or_default!(server)?, commands)
                 .wrap_err("Failed to run rcon command")?
         }
         Commands::New {
@@ -102,7 +102,7 @@ fn main() -> Result<()> {
         Commands::Restart => server::restart().wrap_err("Failed to restart server")?,
         Commands::Stop { server } => {
             let server = unwrap_server_or_default!(server)?;
-            rcon::run(&server, &vec!["stop"])
+            rcon::run(&server, vec!["stop"])
                 .wrap_err_with(|| format!("Failed to stop server {}", &server))?;
         }
         Commands::Template { action } => match action {
