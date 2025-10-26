@@ -147,7 +147,7 @@ pub fn get_current_server_directory() -> Result<String> {
     Ok(server)
 }
 
-pub fn get_default_server() -> Result<String> {
+pub fn get_default_server_owned() -> Result<String> {
     Ok(get()?.default_server.clone())
 }
 
@@ -163,10 +163,10 @@ pub fn server_or_current(server: String) -> Result<String> {
 macro_rules! unwrap_server_or_default {
     ($server:expr) => {
         (|| -> Result<String> {
-            use $crate::config::{get_default_server, server_or_current};
+            use $crate::config::{get_default_server_owned, server_or_current};
 
             let server = $server
-                .map_or_else(get_default_server, |val| Ok(val))
+                .map_or_else(get_default_server_owned, |val| Ok(val))
                 .wrap_err("Failed to get configuration")?;
 
             Ok(server_or_current(server)?)
