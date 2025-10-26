@@ -151,11 +151,13 @@ pub fn get_default_server_owned() -> Result<String> {
     Ok(get()?.default_server.clone())
 }
 
-pub fn server_or_current(server: String) -> Result<String> {
+pub fn server_or_current<S: Into<String> + for<'a> PartialEq<&'a str>>(
+    server: S,
+) -> Result<String> {
     if server == "." {
         get_current_server_directory()
     } else {
-        Ok(server)
+        Ok(server.into())
     }
 }
 
