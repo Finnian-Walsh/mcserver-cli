@@ -79,7 +79,7 @@ fn main() -> Result<()> {
             }
         }
         Commands::Rcon { server, commands } => {
-            rcon::run(&unwrap_server_or_default!(server)?, commands)
+            rcon::run(&unwrap_server_or_default!(server)?, &commands)
                 .wrap_err("Failed to run rcon command")?
         }
         Commands::New {
@@ -102,7 +102,7 @@ fn main() -> Result<()> {
         Commands::Restart => server::restart().wrap_err("Failed to restart server")?,
         Commands::Stop { server } => {
             let server = unwrap_server_or_default!(server)?;
-            rcon::run(&server, vec!["stop"])
+            rcon::run(&server, &vec!["stop"])
                 .wrap_err_with(|| format!("Failed to stop server {}", &server))?;
         }
         Commands::Template { action } => match action {
