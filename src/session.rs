@@ -158,7 +158,8 @@ pub fn tag_dead_servers(servers: &mut [ServerObject]) -> Result<()> {
     Ok(())
 }
 
-pub fn attach(server: &str) -> Result<()> {
+pub fn attach(server: impl AsRef<str>) -> Result<()> {
+    let server = server.as_ref();
     let mut child = Command::new(BASE_COMMAND)
         .arg("attach")
         .arg(get_name(server))
