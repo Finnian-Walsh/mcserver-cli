@@ -4,13 +4,17 @@ use crate::{
 };
 use std::{ffi::OsStr, process::Command};
 
-pub fn run(server: &String, commands: &[impl AsRef<OsStr>]) -> Result<()> {
+pub fn run<C, T>(server: impl AsRef<str>, commands: C) -> Result<()>
+where
+    C: AsRef<[T]>,
+    T: AsRef<OsStr>,
+{
     let config = config::get()?;
     let rcon_config = &config.rcon;
 
     let server_rcon_config = rcon_config
-        .get(server)
-        .ok_or_else(|| Error::MissingRconConfig(String::from(server)))?;
+        .get(server.as_ref())
+        .ok_or_else(|| Error::MissingRconConfig(server.as_ref().to_string()))?;
 
     let mut command = Command::new("mcrcon");
 
@@ -29,7 +33,7 @@ pub fn run(server: &String, commands: &[impl AsRef<OsStr>]) -> Result<()> {
         command.arg(password);
     }
 
-    for arg in commands {
+    for arg in commands.as_ref() {
         command.arg(arg);
     }
 
