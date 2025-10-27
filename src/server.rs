@@ -363,7 +363,9 @@ pub fn get_server_dir_required(server: impl AsRef<Path>) -> Result<PathBuf> {
 
 fn get_server_jar_path(server_dir: impl AsRef<Path>) -> Result<PathBuf> {
     let server_dir = server_dir.as_ref();
-    let jar_file_txt = server_dir.join("jar_file.txt");
+    let jar_file_txt = server_dir
+        .join(METADATA_DIRECTORY)
+        .join(JAR_FILE_TXT_NAME);
 
     if !jar_file_txt.is_file() {
         return Err(Error::MissingFile { file: jar_file_txt });
