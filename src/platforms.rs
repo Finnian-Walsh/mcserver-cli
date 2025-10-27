@@ -69,15 +69,15 @@ fn get_fabric(game_version: Option<String>) -> Result<String> {
         || {
             first_stable(versions.game)
                 .map(|e| e.version)
-                .ok_or_else(|| Error::PlatformsNotFound(String::from("stable game version")))
+                .ok_or_else(|| Error::PlatformsNotFound("stable game version".to_string()))
         },
         Ok,
     )?;
     let loader_version = first_stable(versions.loader)
-        .ok_or_else(|| Error::PlatformsNotFound(String::from("stable loader")))?
+        .ok_or_else(|| Error::PlatformsNotFound("stable loader".to_string()))?
         .version;
     let installer_version = first_stable(versions.installer)
-        .ok_or_else(|| Error::PlatformsNotFound(String::from("stable installer")))?
+        .ok_or_else(|| Error::PlatformsNotFound("stable installer".to_string()))?
         .version;
 
     Ok(format!(
