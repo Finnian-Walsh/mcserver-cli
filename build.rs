@@ -36,7 +36,7 @@ mod config_defs {
         fn to_tokens(&self, tokens: &mut TokenStream) {
             let server_address = match self.server_address.as_ref() {
                 Some(server_address) => quote! {
-                    Some(String::from(#server_address))
+                    Some(#server_address.to_string())
                 },
                 None => quote! { None },
             };
@@ -47,7 +47,7 @@ mod config_defs {
             };
 
             let password = match self.password.as_ref() {
-                Some(password) => quote! { Some(Password(String::from(#password))) },
+                Some(password) => quote! { Some(Password(#password.to_string())) },
                 None => quote! { None },
             };
 
@@ -69,15 +69,15 @@ mod config_defs {
             let default_server = &self.default_server;
 
             let key_value_pairs = self.rcon.iter().map(|(k, v)| {
-                quote! { ( String::from(#k), #v )}
+                quote! { ( #k.to_string(), #v )}
             });
 
             tokens.extend(quote! {
                 DynamicConfig {
-                    default_java_args: String::from(#default_java_args),
+                    default_java_args: #default_java_args.to_string(),
                     nogui: #nogui,
-                    servers_directory: String::from(#servers_directory),
-                    default_server: String::from(#default_server),
+                    servers_directory: #servers_directory.to_string(),
+                    default_server: #default_server.to_string(),
                     rcon: std::collections::HashMap::from([
                         #(#key_value_pairs),*
                     ]),
