@@ -17,7 +17,14 @@ use url::Url;
 
 static CLIENT: OnceLock<Client> = OnceLock::new();
 
-pub fn get_client() -> Result<&'static Client> {
+const FABRIC_BASE_API_URL: &str = "https://meta.fabricmc.net/v2/versions";
+
+const PAPER_BASE_API_URL: &str = "https://api.papermc.io/v2/projects/paper";
+const PAPER_BASE_DOWNLOAD_URL: &str = "https://fill-data.papermc.io/v1/objects";
+
+const PURPUR_BASE_API_URL: &str = "https://api.purpurmc.org/v2/purpur";
+
+fn get_client() -> Result<&'static Client> {
     if let Some(client) = CLIENT.get() {
         return Ok(client);
     }
@@ -38,8 +45,6 @@ pub fn get_client() -> Result<&'static Client> {
     Ok(CLIENT.get_or_init(|| client))
 }
 
-const FABRIC_BASE_API_URL: &str = "https://meta.fabricmc.net/v2/versions";
-
 #[derive(Debug, Deserialize)]
 struct FabricEntry {
     version: String,
@@ -57,7 +62,7 @@ fn first_stable(entries: Vec<FabricEntry>) -> Option<FabricEntry> {
     entries.into_iter().find(|entry| entry.stable)
 }
 
-pub fn get_fabric(game_version: Option<String>) -> Result<String> {
+fn get_fabric(game_version: Option<String>) -> Result<String> {
     let versions: FabricVersions = blocking::get(FABRIC_BASE_API_URL)?.json()?;
 
     let game_version = game_version.map_or_else(
@@ -79,9 +84,6 @@ pub fn get_fabric(game_version: Option<String>) -> Result<String> {
         "{FABRIC_BASE_API_URL}/loader/{game_version}/{loader_version}/{installer_version}/server/jar",
     ))
 }
-
-const PAPER_BASE_API_URL: &str = "https://api.papermc.io/v2/projects/paper";
-const PAPER_BASE_DOWNLOAD_URL: &str = "https://fill-data.papermc.io/v1/objects";
 
 #[derive(Debug, Deserialize)]
 struct PaperProjectInfo {
@@ -109,7 +111,7 @@ struct PaperApplication {
     sha256: String,
 }
 
-pub fn get_paper(version: Option<String>) -> Result<String> {
+fn get_paper(version: Option<String>) -> Result<String> {
     let client = get_client()?;
 
     let version = version.map_or_else(
@@ -136,8 +138,6 @@ pub fn get_paper(version: Option<String>) -> Result<String> {
     Ok(download_url)
 }
 
-const PURPUR_BASE_API_URL: &str = "https://api.purpurmc.org/v2/purpur";
-
 #[derive(Debug, Deserialize)]
 struct PurpurProjectInfo {
     metadata: PurpurMetadata,
@@ -158,13 +158,14 @@ struct PurpurBuilds {
     latest: String,
 }
 
-fn get_current_version() -> Result<String> {
+fn get_current_purpur_version() -> Result<String> {
     let project_info: PurpurProjectInfo = blocking::get(PURPUR_BASE_API_URL)?.json()?;
     Ok(project_info.metadata.current)
 }
 
-pub fn get_purpur(version: Option<String>) -> Result<String> {
-    let version = version.map_or_else(get_current_version, Ok)?;
+fn get_purpur(version: Option<String>) -> Result<String> {
+    let version = version.map_or_else(get_current_purpur_version, Ok)?;
+
     let version_url = format!("{PURPUR_BASE_API_URL}/{version}");
     let version_info: PurpurVersionInfo = blocking::get(&version_url)?.json()?;
 
