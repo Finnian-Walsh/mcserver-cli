@@ -133,16 +133,9 @@ pub fn remove_servers_with_confirmation(servers: Vec<String>) -> Result<()> {
     Ok(())
 }
 
-fn copy_jar<S, J, F>(server_dir: S, mut jar: J, file_name: F) -> Result<()>
-where
-    S: AsRef<Path>,
-    J: io::Read,
-    F: AsRef<Path>,
-{
-    env::set_current_dir(server_dir)?;
-
-    let mut jar_file = File::create(file_name)?;
-    io::copy(&mut jar, &mut jar_file)?;
+fn set_last_used_metadata(metadata_dir: impl AsRef<Path>, timestamp: u64) -> Result<()> {
+    let mut file = File::create(metadata_dir.as_ref().join(LAST_USED_FILE))?;
+    file.write_all(&timestamp.to_le_bytes())?;
 
     Ok(())
 }
@@ -162,11 +155,29 @@ where
     M: AsRef<Path>,
     J: Display,
 {
-    let jar_file_txt = set_jar_file_metadata(metadata_dir, jar_file_name)?;
+    fs::create_dir_all(&metadata_dir)?;
+
+    let jar_file_txt = set_jar_file_metadata(&metadata_dir, jar_file_name)?;
 
     let mut perms = jar_file_txt.metadata()?.permissions();
     perms.set_readonly(true);
     jar_file_txt.set_permissions(perms)?;
+
+    set_last_used_metadata(&metadata_dir, u64::MAX)?;
+
+    Ok(())
+}
+
+fn copy_jar<S, J, F>(server_dir: S, mut jar: J, file_name: F) -> Result<()>
+where
+    S: AsRef<Path>,
+    J: io::Read,
+    F: AsRef<Path>,
+{
+    env::set_current_dir(server_dir)?;
+
+    let mut jar_file = File::create(file_name)?;
+    io::copy(&mut jar, &mut jar_file)?;
 
     Ok(())
 }
@@ -225,39 +236,38 @@ where
     Ok(())
 }
 
-pub fn for_each(mut f: impl FnMut(String)) -> Result<()> {
-    let servers_dir = get_expanded_servers_dir()?;
+pub fn save_last_used_now(server: impl AsRef<Path>) -> Result<()> {
+    let now = SystemTime::now();
 
-    if !servers_dir.exists() || !servers_dir.is_dir() {
-        return Err(Error::MissingDirectory {
-            dir: servers_dir.to_path_buf(),
-        });
-    }
+    let timestamp = now
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| Error::TimeWentBackwards)?
+        .as_secs();
 
-    for entry in fs::read_dir(servers_dir)? {
-        let entry = entry?;
-        let file_name = entry.file_name().to_string_lossy().to_string();
-        f(file_name);
-    }
+    set_last_used_metadata(
+        get_expanded_servers_dir()?
+            .join(server)
+            .join(METADATA_DIRECTORY),
+        timestamp,
+    )?;
 
     Ok(())
 }
 
-pub fn get_all_hashed() -> Result<HashSet<String>> {
-    let mut servers = HashSet::new();
-    for_each(|s| {
-        servers.insert(s);
-    })?;
-    Ok(servers)
+pub enum LastUsed {
+    Never,
+    Unknown,
+    Time(String),
 }
 
-pub fn get_last_used(server: impl AsRef<Path>) -> Result<Option<String>> {
+pub fn get_last_used(server: impl AsRef<Path>) -> Result<LastUsed> {
     let timestamp_path = get_expanded_servers_dir()?
         .join(&server)
+        .join(METADATA_DIRECTORY)
         .join(LAST_USED_FILE);
 
     if !timestamp_path.exists() {
-        return Ok(None);
+        return Ok(LastUsed::Unknown);
     }
 
     let data = fs::read(timestamp_path)?;
@@ -273,6 +283,10 @@ pub fn get_last_used(server: impl AsRef<Path>) -> Result<Option<String>> {
         .map_err(|_| Error::InvalidTimestampFile(server.as_ref().to_string_lossy().to_string()))?;
 
     let timestamp = u64::from_le_bytes(bytes);
+
+    if timestamp == u64::MAX {
+        return Ok(LastUsed::Never);
+    }
 
     let now_ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -298,36 +312,43 @@ pub fn get_last_used(server: impl AsRef<Path>) -> Result<Option<String>> {
     let minutes = hours_remainder / SECS_MINUTE;
     let seconds = hours_remainder % SECS_MINUTE;
 
-    if years > 0 {
-        Ok(Some(format!(
-            "{years}y {days}d {hours}h {minutes}m {seconds}s"
-        )))
+    Ok(LastUsed::Time(if years > 0 {
+        format!("{years}y {days}d {hours}h {minutes}m {seconds}s")
     } else if days > 0 {
-        Ok(Some(format!("{days}d {hours}h {minutes}m {seconds}s")))
+        format!("{days}d {hours}h {minutes}m {seconds}s")
     } else if hours > 0 {
-        Ok(Some(format!("{hours}h {minutes}m {seconds}s")))
+        format!("{hours}h {minutes}m {seconds}s")
     } else if minutes > 0 {
-        Ok(Some(format!("{minutes}m {seconds}s")))
+        format!("{minutes}m {seconds}s")
     } else {
-        Ok(Some(format!("{seconds}s")))
-    }
+        format!("{seconds}s")
+    }))
 }
 
-pub fn save_last_used(server: impl AsRef<Path>) -> Result<()> {
-    let now = SystemTime::now();
+pub fn for_each(mut f: impl FnMut(String)) -> Result<()> {
+    let servers_dir = get_expanded_servers_dir()?;
 
-    let timestamp = now
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| Error::TimeWentBackwards)?
-        .as_secs();
+    if !servers_dir.exists() || !servers_dir.is_dir() {
+        return Err(Error::MissingDirectory {
+            dir: servers_dir.to_path_buf(),
+        });
+    }
 
-    let timestamp_path = get_expanded_servers_dir()?
-        .join(&server)
-        .join(LAST_USED_FILE);
-    let mut file = File::create(timestamp_path)?;
-    file.write_all(&timestamp.to_le_bytes())?;
+    for entry in fs::read_dir(servers_dir)? {
+        let entry = entry?;
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        f(file_name);
+    }
 
     Ok(())
+}
+
+pub fn get_all_hashed() -> Result<HashSet<String>> {
+    let mut servers = HashSet::new();
+    for_each(|s| {
+        servers.insert(s);
+    })?;
+    Ok(servers)
 }
 
 pub fn get_server_dir_required(server: impl AsRef<Path>) -> Result<PathBuf> {
@@ -388,7 +409,7 @@ pub fn restart() -> Result<()> {
         return Err(Error::InvalidServerSession(session_name));
     };
 
-    save_last_used(server)?;
+    save_last_used_now(server)?;
     session::write_line(&session_name, get_command(server)?)
 }
 
