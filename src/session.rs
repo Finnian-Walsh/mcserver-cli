@@ -99,7 +99,7 @@ fn add_last_used_tag(server: &mut ServerObject) {
     server
         .tags
         .push(match last_used.unwrap_or(LastUsed::Unknown) {
-            LastUsed::Never => format!("(Last used \x1b[35;1mnever\x1b[0m)"),
+            LastUsed::Never => "(Last used \x1b[35;1mnever\x1b[0m)".to_string(),
             LastUsed::Unknown => "(Last used unknown)".to_string(),
             LastUsed::Time(time) => format!("(Last used \x1b[35;1m{time}\x1b[0m ago)"),
         });
