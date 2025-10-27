@@ -1,6 +1,6 @@
 use crate::{
     error::{Error, Result},
-    server::{ServerObject, get_last_used, save_last_used},
+    server::{LastUsed, ServerObject, get_last_used, save_last_used_now},
     session,
 };
 use std::{
@@ -96,10 +96,13 @@ fn get_server_sessions_to_living() -> Result<HashMap<String, bool>> {
 fn add_last_used_tag(server: &mut ServerObject) {
     let last_used = get_last_used(&server.name);
 
-    server.tags.push(format!(
-        "(Last used \x1b[35;1m{}\x1b[0m ago)",
-        last_used.unwrap_or(None).as_deref().unwrap_or("unknown")
-    ))
+    server
+        .tags
+        .push(match last_used.unwrap_or(LastUsed::Unknown) {
+            LastUsed::Never => format!("(Last used \x1b[35;1mnever\x1b[0m)"),
+            LastUsed::Unknown => "(Last used unknown)".to_string(),
+            LastUsed::Time(time) => format!("(Last used \x1b[35;1m{time}\x1b[0m ago)"),
+        });
 }
 
 fn tag_as_active(server: &mut ServerObject) {
@@ -169,7 +172,7 @@ pub fn attach(server: impl AsRef<str>) -> Result<()> {
     let status = child.wait()?;
 
     if status.success() {
-        save_last_used(server)
+        save_last_used_now(server)
     } else {
         let mut buf = Vec::new();
         child
@@ -219,10 +222,10 @@ pub fn new_server(
     server: impl Display + AsRef<Path>,
     initial_command: Option<impl AsRef<OsStr>>,
 ) -> Result<()> {
-    save_last_used(&server)?;
+    save_last_used_now(&server)?;
     let session_name = get_name(&server);
     new_session(session_name, initial_command)?;
-    save_last_used(&server)
+    save_last_used_now(&server)
 }
 
 pub fn delete_server_session(server: impl Display, force: bool) -> Result<()> {
