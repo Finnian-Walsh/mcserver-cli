@@ -147,9 +147,10 @@ pub fn get_default_server_owned() -> Result<String> {
     Ok(get()?.default_server.clone())
 }
 
-pub fn server_or_current<S: Into<String> + for<'a> PartialEq<&'a str>>(
-    server: S,
-) -> Result<String> {
+pub fn server_or_current<S>(server: S) -> Result<String>
+where
+    S: Into<String> + for<'a> PartialEq<&'a str>,
+{
     if server == "." {
         get_current_server_directory()
     } else {
