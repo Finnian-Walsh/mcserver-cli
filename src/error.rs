@@ -7,12 +7,6 @@ use std::{
 };
 use thiserror::Error;
 
-#[derive(Debug, Error)]
-pub enum GlobalMutex {
-    #[error("CONFIG")]
-    Config,
-}
-
 #[non_exhaustive]
 #[derive(Debug, Error)]
 pub enum Error {
@@ -60,8 +54,8 @@ pub enum Error {
     #[error("Platforms not found: {0}")]
     PlatformsNotFound(String),
 
-    #[error("Mutex {0} is poisoned")]
-    GlobalMutexPoisoned(GlobalMutex),
+    #[error("The configuration mutex has been poisoned")]
+    ConfigMutexPoisoned,
 
     #[error("Rcon config is missing for server: {0}")]
     MissingRconConfig(String),

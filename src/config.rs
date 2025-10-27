@@ -1,6 +1,6 @@
 use crate::{
     config_defs::{DynamicConfig, StaticConfig},
-    error::{Error, GlobalMutex, Result},
+    error::{Error, Result},
 };
 use std::{
     env, fs,
@@ -30,9 +30,7 @@ impl AutoConfig {
             return Ok(());
         };
 
-        let guard = mutex
-            .lock()
-            .map_err(|_| Error::GlobalMutexPoisoned(GlobalMutex::Config))?;
+        let guard = mutex.lock().map_err(|_| Error::ConfigMutexPoisoned)?;
 
         if let Some(initial_value) = self.initial_value.get() {
             if *initial_value == *guard {
@@ -89,9 +87,7 @@ pub fn get_static() -> &'static StaticConfig {
 
 pub fn get() -> Result<MutexGuard<'static, DynamicConfig>> {
     if let Some(mutex) = CONFIG.get() {
-        return mutex
-            .lock()
-            .map_err(|_| Error::GlobalMutexPoisoned(GlobalMutex::Config));
+        return mutex.lock().map_err(|_| Error::ConfigMutexPoisoned);
     }
 
     let config_dir = get_config_directory()?;
@@ -112,7 +108,7 @@ pub fn get() -> Result<MutexGuard<'static, DynamicConfig>> {
     CONFIG
         .get_or_init(|| Mutex::new(config))
         .lock()
-        .map_err(|_| Error::GlobalMutexPoisoned(GlobalMutex::Config))
+        .map_err(|_| Error::ConfigMutexPoisoned)
 }
 
 pub fn get_expanded_servers_dir() -> Result<&'static Path> {
