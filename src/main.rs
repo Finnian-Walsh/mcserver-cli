@@ -4,7 +4,6 @@ mod config_defs;
 mod error;
 mod platforms;
 mod rcon;
-mod reinstaller;
 mod server;
 mod session;
 
@@ -86,13 +85,8 @@ fn main() -> Result<()> {
             platform,
             version,
             name,
-        } => server::init(
-            platforms::get(platform, version)
-                .wrap_err(format!("Failed to get {:?} download url", platform))?,
-            platform,
-            name,
-        )
-        .wrap_err(format!("Failed to initialize {:?} server", platform))?,
+        } => server::create_new(platform, version, name)
+            .wrap_err(format!("Failed to create {platform} server"))?,
         Commands::Remove { servers, force } => if force {
             server::remove_servers(servers)
         } else {
@@ -120,12 +114,13 @@ fn main() -> Result<()> {
             from_crate,
         } => {
             if let Some(path) = path {
-                reinstaller::with_path(&path)
+                server::reinstall_with_path(&path)
                     .wrap_err(format!("Failed to update package with {}", path.display()))?
             } else if git {
-                reinstaller::with_git(commit).wrap_err("Failed to update package with git repo")?
+                server::reinstall_with_git(commit)
+                    .wrap_err("Failed to update package with git repo")?
             } else if from_crate {
-                reinstaller::with_crate().wrap_err("Failed to update package with crate")?
+                server::reinstall_with_crate().wrap_err("Failed to update package with crate")?
             } else {
                 unreachable!("Clap ensures git or a path is provided")
             }
@@ -134,14 +129,8 @@ fn main() -> Result<()> {
             server,
             platform,
             version,
-        } => server::reinit(
-            platforms::get(platform, version)
-                .wrap_err_with(|| "Failed to get download url for {platform} v{version}")?,
-            server::get_server_dir_required(&config::server_or_current(server)?)
-                .wrap_err("Failed to get server directory")?,
-            platform,
-        )
-        .wrap_err("Failed to update server")?,
+        } => server::update_existing(server, platform, version)
+            .wrap_err("Failed to update server")?,
     };
 
     config::CONFIG.write()?;
