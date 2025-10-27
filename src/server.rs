@@ -1,20 +1,32 @@
 use crate::{
     config::{self, get_expanded_servers_dir, server_or_current},
     error::{Error, Result},
-    platforms::Platform,
+    platforms::{self, Platform},
     session,
 };
-use reqwest::{blocking, header};
+use reqwest::{
+    blocking::{self, Response},
+    header,
+};
 use std::{
     collections::HashSet,
     env,
+    ffi::OsStr,
     fmt::{self, Display, Formatter},
     fs::{self, File},
     io::{self, Write},
     path::{Path, PathBuf},
+    process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 use url::Url;
+
+const REPO_URL: &str = env!("CARGO_PKG_REPOSITORY");
+const TEMPLATE_SUFFIX: &str = ".template";
+
+const METADATA_DIRECTORY: &str = ".mcserver";
+const JAR_FILE_TXT_NAME: &str = "jar_file.txt";
+const LAST_USED_FILE: &str = "last_used.timestamp";
 
 pub struct ServerObject {
     pub name: String,
@@ -35,18 +47,6 @@ impl Display for ServerObject {
         }
         Ok(())
     }
-}
-
-fn copy_jar(server_dir: impl AsRef<Path>, file_name: String, mut jar: impl io::Read) -> Result<()> {
-    env::set_current_dir(server_dir)?;
-
-    let mut jar_file = File::create(&file_name)?;
-    io::copy(&mut jar, &mut jar_file)?;
-
-    let mut jar_file_txt = File::create("jar_file.txt")?;
-    writeln!(jar_file_txt, "{file_name}")?;
-
-    Ok(())
 }
 
 pub fn copy_directory(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<()> {
@@ -133,31 +133,45 @@ pub fn remove_servers_with_confirmation(servers: Vec<String>) -> Result<()> {
     Ok(())
 }
 
-pub fn init(download_url: Url, platform: Platform, name: Option<String>) -> Result<()> {
-    let name = name.unwrap_or_else(|| format!("{platform}-server"));
-    let servers_dir = &get_expanded_servers_dir()?;
+fn copy_jar<S, J, F>(server_dir: S, mut jar: J, file_name: F) -> Result<()>
+where
+    S: AsRef<Path>,
+    J: io::Read,
+    F: AsRef<Path>,
+{
+    env::set_current_dir(server_dir)?;
 
-    let mut server_dir = servers_dir.join(&name);
+    let mut jar_file = File::create(file_name)?;
+    io::copy(&mut jar, &mut jar_file)?;
 
-    if server_dir.exists() {
-        let mut number = 2;
-
-        server_dir = loop {
-            let dir = servers_dir.join(format!("{}-{}", &name, number));
-
-            if !dir.exists() {
-                break dir;
-            }
-            number += 1;
-        }
-    }
-
-    fs::create_dir_all(&server_dir)?;
-
-    reinit(download_url, server_dir, platform)
+    Ok(())
 }
 
-pub fn reinit(download_url: Url, server_dir: impl AsRef<Path>, platform: Platform) -> Result<()> {
+pub fn set_jar_file_metadata<M, J>(metadata_dir: M, jar_file_name: J) -> Result<File>
+where
+    M: AsRef<Path>,
+    J: Display,
+{
+    let mut jar_file_txt = File::create(metadata_dir.as_ref().join(JAR_FILE_TXT_NAME))?;
+    writeln!(jar_file_txt, "{jar_file_name}")?;
+    Ok(jar_file_txt)
+}
+
+pub fn set_default_metadata<M, J>(metadata_dir: M, jar_file_name: J) -> Result<()>
+where
+    M: AsRef<Path>,
+    J: Display,
+{
+    let jar_file_txt = set_jar_file_metadata(metadata_dir, jar_file_name)?;
+
+    let mut perms = jar_file_txt.metadata()?.permissions();
+    perms.set_readonly(true);
+    jar_file_txt.set_permissions(perms)?;
+
+    Ok(())
+}
+
+pub fn get_jar(download_url: Url, platform: Platform) -> Result<(Response, String)> {
     println!("Downloading from {download_url}...");
     let response = blocking::get(download_url)?;
 
@@ -171,10 +185,42 @@ pub fn reinit(download_url: Url, server_dir: impl AsRef<Path>, platform: Platfor
         .map(String::from)
         .unwrap_or_else(|| format!("{platform}.jar"));
 
-    if let Err(err) = copy_jar(&server_dir, file_name, response) {
-        remove_dir_with_retries(server_dir)?;
-        return Err(err);
-    }
+    // if let Err(err) = copy_jar(&server_dir, file_name, response) {
+    //     remove_dir_with_retries(server_dir)?;
+    //     return Err(err);
+    // }
+
+    Ok((response, file_name))
+}
+
+pub fn create_new<N>(platform: Platform, version: Option<String>, name: Option<N>) -> Result<()>
+where
+    N: Display,
+{
+    let download_url = platforms::get(platform, version)?;
+
+    let server_dir = match name {
+        Some(name) => get_first_server_path(name)?,
+        None => get_first_server_path(format!("{platform}-server"))?,
+    };
+
+    fs::create_dir_all(&server_dir)?;
+    let (jar, jar_file_name) = get_jar(download_url, platform)?;
+    copy_jar(&server_dir, jar, &jar_file_name)?;
+    set_default_metadata(server_dir.join(METADATA_DIRECTORY), jar_file_name)?;
+    Ok(())
+}
+
+pub fn update_existing<S>(server: S, platform: Platform, version: Option<String>) -> Result<()>
+where
+    S: AsRef<Path>,
+{
+    let download_url = platforms::get(platform, version)?;
+    let server_dir = get_expanded_servers_dir()?.join(&server);
+
+    let (jar, jar_file_name) = get_jar(download_url, platform)?;
+    copy_jar(&server, jar, &jar_file_name)?;
+    set_jar_file_metadata(server_dir.join(METADATA_DIRECTORY), jar_file_name)?;
 
     Ok(())
 }
@@ -204,8 +250,6 @@ pub fn get_all_hashed() -> Result<HashSet<String>> {
     })?;
     Ok(servers)
 }
-
-const LAST_USED_FILE: &str = "last_used.timestamp";
 
 pub fn get_last_used(server: impl AsRef<Path>) -> Result<Option<String>> {
     let timestamp_path = get_expanded_servers_dir()?
@@ -286,7 +330,7 @@ pub fn save_last_used(server: impl AsRef<Path>) -> Result<()> {
     Ok(())
 }
 
-pub fn get_server_dir_required(server: &str) -> Result<PathBuf> {
+pub fn get_server_dir_required(server: impl AsRef<Path>) -> Result<PathBuf> {
     let server_dir = get_expanded_servers_dir()?.join(server);
 
     if !server_dir.is_dir() {
@@ -296,7 +340,8 @@ pub fn get_server_dir_required(server: &str) -> Result<PathBuf> {
     Ok(server_dir)
 }
 
-fn get_server_jar_path(server_dir: &Path) -> Result<PathBuf> {
+fn get_server_jar_path(server_dir: impl AsRef<Path>) -> Result<PathBuf> {
+    let server_dir = server_dir.as_ref();
     let jar_file_txt = server_dir.join("jar_file.txt");
 
     if !jar_file_txt.is_file() {
@@ -314,7 +359,8 @@ fn get_server_jar_path(server_dir: &Path) -> Result<PathBuf> {
     Ok(jar_file_path)
 }
 
-pub fn get_command(server: &str) -> Result<String> {
+pub fn get_command(server: impl AsRef<str>) -> Result<String> {
+    let server = server.as_ref();
     if is_template(server) {
         return Err(Error::TemplateDeployed);
     }
@@ -346,13 +392,12 @@ pub fn restart() -> Result<()> {
     session::write_line(&session_name, get_command(server)?)
 }
 
-const TEMPLATE_SUFFIX: &str = ".template";
-
-pub fn is_template(server: &str) -> bool {
-    server.ends_with(TEMPLATE_SUFFIX)
+pub fn is_template(server: impl AsRef<str>) -> bool {
+    server.as_ref().ends_with(TEMPLATE_SUFFIX)
 }
 
-pub fn new_template(server: &str) -> Result<()> {
+pub fn new_template(server: impl AsRef<str>) -> Result<()> {
+    let server = server.as_ref();
     if is_template(server) {
         return Err(Error::TemplateUsedForTemplate);
     }
@@ -375,31 +420,35 @@ pub fn new_template(server: &str) -> Result<()> {
     Ok(())
 }
 
-fn get_first_server_path(servers_dir: impl AsRef<Path>, name: &str) -> PathBuf {
-    let path = servers_dir.as_ref().join(name);
+fn get_first_server_path(name: impl Display) -> Result<PathBuf> {
+    let servers_dir = get_expanded_servers_dir()?;
+    let path = servers_dir.join(format!("{name}"));
+
     if !path.exists() {
-        return path;
+        return Ok(path);
     }
 
     let mut number = 2;
-    loop {
-        let path = servers_dir.as_ref().join(format!("{name}-{number}"));
+
+    Ok(loop {
+        let path = servers_dir.join(format!("{name}-{number}"));
         if !path.exists() {
             break path;
         }
 
         number += 1;
-    }
+    })
 }
 
-pub fn from_template(template: &str, server: Option<&str>) -> Result<()> {
+pub fn from_template(template: impl AsRef<str>, server: Option<impl AsRef<str>>) -> Result<()> {
+    let template = template.as_ref();
     let servers_dir = get_expanded_servers_dir()?;
 
     let template_path = if template.ends_with(TEMPLATE_SUFFIX) {
         println!("Creating server from {template}");
         servers_dir.join(template)
     } else {
-        let template_name = format!("{template}{TEMPLATE_SUFFIX}");
+        let template_name = format!("{}{TEMPLATE_SUFFIX}", template);
         println!("Creating server from {template_name}");
         servers_dir.join(template_name)
     };
@@ -410,16 +459,55 @@ pub fn from_template(template: &str, server: Option<&str>) -> Result<()> {
 
     let server_path = match server {
         Some(server) => {
+            let server = server.as_ref();
             let path = get_expanded_servers_dir()?.join(server);
             if path.exists() {
                 return Err(Error::ServerAlreadyExists(server.to_string()));
             }
             path
         }
-        None => get_first_server_path(servers_dir, template),
+        None => get_first_server_path(template)?,
     };
 
     copy_directory(template_path, server_path)?;
+
+    Ok(())
+}
+
+pub fn reinstall_with_git(commit: Option<String>) -> io::Result<()> {
+    Command::new("cargo")
+        .arg("install")
+        .arg("--git")
+        .arg(if let Some(commit) = commit {
+            format!("{REPO_URL}/commit/{commit}")
+        } else {
+            REPO_URL.to_string()
+        })
+        .arg("--force")
+        .spawn()?
+        .wait()?;
+
+    Ok(())
+}
+
+pub fn reinstall_with_path(path: impl AsRef<OsStr>) -> io::Result<()> {
+    Command::new("cargo")
+        .arg("install")
+        .arg("--path")
+        .arg(path)
+        .arg("--force")
+        .spawn()?
+        .wait()?;
+
+    Ok(())
+}
+
+pub fn reinstall_with_crate() -> io::Result<()> {
+    Command::new("cargo")
+        .arg("install")
+        .arg(env!("CARGO_PKG_NAME"))
+        .spawn()?
+        .wait()?;
 
     Ok(())
 }
