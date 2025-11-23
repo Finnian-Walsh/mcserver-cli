@@ -45,6 +45,12 @@ pub enum Error {
     #[error("Missing file: {}", file.display())]
     MissingFile { file: PathBuf },
 
+    #[error("There is no default server")]
+    NoDefaultServer,
+
+    #[error("Rcon config is not present, but required for remote connections")]
+    NoRconConfig,
+
     #[error("No server child was given")]
     NoServerChild,
 
