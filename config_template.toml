@@ -1,5 +1,5 @@
 [static_config]
-# For default USER_AGENT header value in reqwest client headers
+# Used for the default USER_AGENT header value in reqwest (request) client headers
 contact = "none"
 
 # Where to store runtime config (local to home)
@@ -24,7 +24,7 @@ servers_directory = "~/Servers"
 # my-server = { server_address = "localhost", port = 25575, password = "abc" }
 
 # Equally, you can do mcron.<server> and customize each field line by line
-# [default_dynamic_config.rcon.my-second-server]
+# [default_dynamic_config.rcon.my-server]
 # server_address = "localhost"
 # port = 25575
 # password = "abc"
