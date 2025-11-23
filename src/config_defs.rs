@@ -45,6 +45,6 @@ pub struct DynamicConfig {
     pub default_java_args: String,
     pub nogui: bool,
     pub servers_directory: String,
-    pub default_server: String,
-    pub rcon: HashMap<String, RconConfig>,
+    pub default_server: Option<String>,
+    pub rcon: Option<HashMap<String, RconConfig>>,
 }
