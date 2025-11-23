@@ -363,9 +363,7 @@ pub fn get_server_dir_required(server: impl AsRef<Path>) -> Result<PathBuf> {
 
 fn get_server_jar_path(server_dir: impl AsRef<Path>) -> Result<PathBuf> {
     let server_dir = server_dir.as_ref();
-    let jar_file_txt = server_dir
-        .join(METADATA_DIRECTORY)
-        .join(JAR_FILE_TXT_NAME);
+    let jar_file_txt = server_dir.join(METADATA_DIRECTORY).join(JAR_FILE_TXT_NAME);
 
     if !jar_file_txt.is_file() {
         return Err(Error::MissingFile { file: jar_file_txt });
@@ -533,4 +531,49 @@ pub fn reinstall_with_crate() -> io::Result<()> {
         .wait()?;
 
     Ok(())
+}
+
+pub fn rcon<C, T>(server: impl AsRef<str>, commands: C) -> Result<()>
+where
+    C: AsRef<[T]>,
+    T: AsRef<OsStr>,
+{
+    let config = config::get()?;
+    let rcon_config = config.rcon.as_ref().ok_or(Error::NoRconConfig)?;
+
+    let server_rcon_config = rcon_config
+        .get(server.as_ref())
+        .ok_or_else(|| Error::MissingRconConfig(server.as_ref().to_string()))?;
+
+    let mut command = Command::new("mcrcon");
+
+    if let Some(server_address) = &server_rcon_config.server_address {
+        command.arg("-H");
+        command.arg(server_address);
+    }
+
+    if let Some(port) = &server_rcon_config.port {
+        command.arg("-P");
+        command.arg(port.to_string());
+    }
+
+    if let Some(password) = &server_rcon_config.password {
+        command.arg("-p");
+        command.arg(password);
+    }
+
+    for arg in commands.as_ref() {
+        command.arg(arg);
+    }
+
+    let status = command.status()?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(Error::CommandFailure {
+            code: status.code(),
+            stderr: None,
+        })
+    }
 }
