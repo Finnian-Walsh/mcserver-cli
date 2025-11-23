@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, anyhow};
+use color_eyre::eyre::{Result, WrapErr, eyre};
 use quote::quote;
 use serde::Deserialize;
 use std::{
@@ -28,7 +28,7 @@ mod config_defs {
     impl ToTokens for Password {
         fn to_tokens(&self, tokens: &mut TokenStream) {
             let password = &self.0;
-            tokens.extend(quote! {#password})
+            tokens.extend(quote! { Password { #password } })
         }
     }
 
@@ -47,7 +47,7 @@ mod config_defs {
             };
 
             let password = match self.password.as_ref() {
-                Some(password) => quote! { Some(Password(#password.to_string())) },
+                Some(password) => quote! { Some(#password) },
                 None => quote! { None },
             };
 
@@ -66,21 +66,34 @@ mod config_defs {
             let default_java_args = &self.default_java_args;
             let nogui = &self.nogui;
             let servers_directory = &self.servers_directory;
-            let default_server = &self.default_server;
 
-            let key_value_pairs = self.rcon.iter().map(|(k, v)| {
-                quote! { ( #k.to_string(), #v )}
-            });
+            let default_server_quote = if let Some(default_server) = &self.default_server {
+                quote! { Some(#default_server.to_string()) }
+            } else {
+                quote! { None }
+            };
+
+            let rcon_quote = if let Some(rcon) = &self.rcon {
+                let key_value_pairs = rcon.iter().map(|(k, v)| {
+                    quote! { ( #k.to_string(), #v )}
+                });
+
+                quote! {
+                    Some(std::collections::HashMap::from([
+                        #(#key_value_pairs),*
+                    ]))
+                }
+            } else {
+                quote! { None }
+            };
 
             tokens.extend(quote! {
                 DynamicConfig {
                     default_java_args: #default_java_args.to_string(),
                     nogui: #nogui,
                     servers_directory: #servers_directory.to_string(),
-                    default_server: #default_server.to_string(),
-                    rcon: std::collections::HashMap::from([
-                        #(#key_value_pairs),*
-                    ]),
+                    default_server: #default_server_quote,
+                    rcon: #rcon_quote,
                 }
             });
         }
@@ -126,7 +139,7 @@ fn handle_static_config(cargo_manifest_dir: &Path) -> Result<Option<StaticConfig
     build_log!("Static configuration is a file");
 
     let result = toml::from_str(
-        &fs::read_to_string(static_config_path).context("Failed to read configuration file")?,
+        &fs::read_to_string(static_config_path).wrap_err("Failed to read configuration file")?,
     );
 
     match result {
@@ -156,20 +169,20 @@ fn main() -> Result<()> {
 
     if !config_template_path.exists() {
         build_log!("Config path ({config_template_path:?}) does not exist");
-        return Err(anyhow!("Configuration template does not exist"));
+        return Err(eyre!("Configuration template does not exist"));
     }
 
     build_log!("Configuration path exists ({config_template_path:?})");
 
     if !config_template_path.is_file() {
         build_log!("Configuration template should be a file",);
-        return Err(anyhow!("Invalid configuration template"));
+        return Err(eyre!("Invalid configuration template"));
     }
 
     let config: Config = toml::from_str(
-        &fs::read_to_string(config_template_path).context("Failed to read configuration file")?,
+        &fs::read_to_string(config_template_path).wrap_err("Failed to read configuration file")?,
     )
-    .context("Failed to parse configuration file")?;
+    .wrap_err("Failed to parse configuration file")?;
 
     let static_config = match handle_static_config(&cargo_manifest_dir)? {
         Some(static_config) => {
@@ -186,7 +199,9 @@ fn main() -> Result<()> {
 
     let tokens = quote! {
         mod generated_cfg {
-            use crate::config_defs::{StaticConfig, Password, RconConfig, DynamicConfig};
+            use crate::config_defs::{StaticConfig, DynamicConfig};
+            #[allow(unused)]
+            use crate::config_defs::{RconConfig, Password};
             use std::sync::OnceLock;
 
             pub const STATIC_CONFIG: StaticConfig = #static_config;
@@ -218,9 +233,9 @@ fn main() -> Result<()> {
         fs::write(
             &dynamic_config_template_path,
             toml::to_string(&default_dynamic_config)
-                .context("Failed to serialize dynamic configuration")?,
+                .wrap_err("Failed to serialize dynamic configuration")?,
         )
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!("Failed to write to the dynamic configuration path ({dynamic_config_template_path:?})")
         })?;
     }
