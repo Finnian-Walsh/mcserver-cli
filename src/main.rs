@@ -3,7 +3,6 @@ mod config;
 mod config_defs;
 mod error;
 mod platforms;
-mod rcon;
 mod server;
 mod session;
 
@@ -24,13 +23,19 @@ fn main() -> Result<()> {
             ConfigType::Dynamic => println!("{:#?}", config::get()?),
         },
         Commands::Default { action } => match action {
-            DefaultCommands::Get => println!("{}", config::get()?.default_server),
-            DefaultCommands::Set { server } => config::get()?.default_server = server,
+            DefaultCommands::Get => {
+                if let Some(default_server) = &config::get()?.default_server {
+                    println!("\"{default_server}\"")
+                } else {
+                    println!("None")
+                }
+            }
+            DefaultCommands::Set { server } => config::get()?.default_server = Some(server),
         },
         Commands::DeleteAllSessions { force } => if force {
             session::delete_all()
         } else {
-            session::delete_all_confirmed()
+            session::confirm_delete_all()
         }
         .wrap_err("Failed to delete all sessions")?,
         Commands::DeleteSession { session, force } => {
@@ -78,7 +83,7 @@ fn main() -> Result<()> {
             }
         }
         Commands::Rcon { server, commands } => {
-            rcon::run(unwrap_server_or_default!(server)?, commands)
+            server::rcon(unwrap_server_or_default!(server)?, commands)
                 .wrap_err("Failed to run rcon command")?
         }
         Commands::New {
@@ -96,7 +101,7 @@ fn main() -> Result<()> {
         Commands::Restart => server::restart().wrap_err("Failed to restart server")?,
         Commands::Stop { server } => {
             let server = unwrap_server_or_default!(server)?;
-            rcon::run(&server, vec!["stop"])
+            server::rcon(&server, vec!["stop"])
                 .wrap_err_with(|| format!("Failed to stop server {}", &server))?;
         }
         Commands::Template { action } => match action {
