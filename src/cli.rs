@@ -14,7 +14,7 @@ pub enum Commands {
     #[command(visible_alias = "a", about = "Attach to a server session")]
     Attach { server: Option<String> },
 
-    #[command(visible_alias = "conf", about = "Query the configuration")]
+    #[command(visible_alias = "cfg", about = "Query the configuration")]
     Config {
         #[command(subcommand)]
         config_type: ConfigType,
