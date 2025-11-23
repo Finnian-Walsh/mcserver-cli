@@ -1,6 +1,6 @@
 [package]
 name = "mcserver"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2024"
 description = "A command line interface tool which simplifies minecraft server management with zellij and mcrcon"
 license = "MIT"
@@ -24,7 +24,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 toml = "0.9.5"
 shellexpand = "3.1.1"
 proc-macro2 = "1.0.101"
-anyhow = "1.0.100"
+color-eyre = "0.6.5"
 
 [features]
 default = ["color-eyre"]
