@@ -2,7 +2,7 @@
 name = "mcserver"
 version = "0.1.8"
 edition = "2024"
-description = "A command line interface tool which simplifies minecraft server management with zellij and mcrcon"
+description = "A command line interface which simplifies minecraft server management with zellij and mcrcon"
 license = "MIT"
 repository = "https://github.com/Finnian-Walsh/mcserver-cli.git"
 
