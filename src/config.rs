@@ -144,10 +144,7 @@ pub fn get_current_server_directory() -> Result<String> {
 }
 
 pub fn get_default_server_owned() -> Result<Option<String>> {
-    Ok(get()?
-        .default_server
-        .as_ref()
-        .map_or(None, |ds| Some(ds.clone())))
+    Ok(get()?.default_server.clone())
 }
 
 pub fn server_or_current<S>(server: S) -> Result<String>
