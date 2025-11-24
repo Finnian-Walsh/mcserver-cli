@@ -1,6 +1,6 @@
 use crate::{
     error::{Error, Result},
-    server::{LastUsed, ServerObject, get_last_used, save_last_used_now},
+    server::save_last_used_now,
     session,
 };
 use std::{
@@ -34,7 +34,8 @@ fn get_server_sessions_raw_string() -> Result<Option<String>> {
     }
 }
 
-fn session_has_exited(session_line: &&str) -> bool {
+fn session_has_exited(session_line: impl AsRef<str>) -> bool {
+    let session_line = session_line.as_ref();
     let bracket_pos = match session_line.rfind('(') {
         Some(pos) => pos,
         None => return false,
@@ -43,122 +44,55 @@ fn session_has_exited(session_line: &&str) -> bool {
     session_line[bracket_pos..].contains("EXITED") // if there is no "EXITED", still alive
 }
 
-fn session_is_alive(session_line: &&str) -> bool {
+fn session_is_alive(session_line: impl AsRef<str>) -> bool {
     !session_has_exited(session_line)
 }
 
-fn session_info_to_server(session_info: &str) -> Option<String> {
-    let session_name = match session_info.rfind("[Created") {
-        Some(pos) => &session_info[7..=pos - 5],
+fn session_line_to_server(session_line: impl AsRef<str>) -> Option<String> {
+    let session_line = session_line.as_ref();
+    let session_name = match session_line.rfind("[Created") {
+        Some(pos) => &session_line[7..=pos - 5],
         None => return None, // unexpected error
     };
 
     session_name.strip_suffix(session::SUFFIX).map(String::from)
 }
 
-fn get_alive_server_sessions() -> Result<HashSet<String>> {
+pub fn get_alive_server_sessions() -> Result<HashSet<String>> {
     Ok(get_server_sessions_raw_string()?
         .map(|server_sessions| {
             server_sessions
                 .lines()
-                .filter(session_is_alive)
-                .filter_map(session_info_to_server)
+                .filter(|sl| session_is_alive(sl))
+                .filter_map(session_line_to_server)
                 .collect()
         })
         .unwrap_or_default())
 }
 
-fn get_dead_server_sessions() -> Result<HashSet<String>> {
+pub fn get_dead_server_sessions() -> Result<HashSet<String>> {
     Ok(get_server_sessions_raw_string()?
         .map(|server_sessions| {
             server_sessions
                 .lines()
-                .filter(session_has_exited)
-                .filter_map(session_info_to_server)
+                .filter(|sl| session_has_exited(sl))
+                .filter_map(session_line_to_server)
                 .collect()
         })
         .unwrap_or_default())
 }
 
-fn get_server_sessions_to_living() -> Result<HashMap<String, bool>> {
+pub fn get_server_sessions_to_living() -> Result<HashMap<String, bool>> {
     Ok(get_server_sessions_raw_string()?
         .map(|ss| {
             ss.lines()
                 .map(|s| (s, session_is_alive(&s)))
                 .filter_map(|(session, living)| {
-                    session_info_to_server(session).map(|server| (server, living))
+                    session_line_to_server(session).map(|server| (server, living))
                 })
                 .collect()
         })
         .unwrap_or_default())
-}
-
-fn add_last_used_tag(server: &mut ServerObject) {
-    let last_used = get_last_used(&server.name);
-
-    server
-        .tags
-        .push(match last_used.unwrap_or(LastUsed::Unknown) {
-            LastUsed::Never => "(Last used \x1b[35;1mnever\x1b[0m)".to_string(),
-            LastUsed::Unknown => "(Last used unknown)".to_string(),
-            LastUsed::Time(time) => format!("(Last used \x1b[35;1m{time}\x1b[0m ago)"),
-        });
-}
-
-fn tag_as_active(server: &mut ServerObject) {
-    server.tags.push("(\x1b[32;1mactive\x1b[0m)".to_string());
-}
-
-fn tag_as_dead(server: &mut ServerObject) {
-    server.tags.push("(\x1b[31;1mdead\x1b[0m)".to_string())
-}
-
-pub fn retain_active_servers(servers: &mut Vec<ServerObject>) -> Result<()> {
-    let sessions = get_alive_server_sessions()?;
-    servers.retain(|server| sessions.contains(&server.name));
-    Ok(())
-}
-
-pub fn retain_inactive_servers(servers: &mut Vec<ServerObject>) -> Result<()> {
-    let sessions = get_alive_server_sessions()?;
-    servers.retain(|server| !sessions.contains(&server.name));
-    servers.iter_mut().for_each(add_last_used_tag);
-    Ok(())
-}
-
-pub fn retain_dead_servers(servers: &mut Vec<ServerObject>) -> Result<()> {
-    let dead_sessions = get_dead_server_sessions()?;
-    servers.retain(|server| dead_sessions.contains(&server.name));
-    servers.iter_mut().for_each(add_last_used_tag);
-    Ok(())
-}
-
-pub fn tag_servers(servers: &mut [ServerObject]) -> Result<()> {
-    let mapped_sessions = get_server_sessions_to_living()?;
-
-    servers
-        .iter_mut()
-        .for_each(|server| match mapped_sessions.get(&server.name) {
-            Some(true) => tag_as_active(server),
-            Some(false) => {
-                add_last_used_tag(server);
-                tag_as_dead(server);
-            }
-            None => add_last_used_tag(server),
-        });
-    Ok(())
-}
-
-pub fn tag_dead_servers(servers: &mut [ServerObject]) -> Result<()> {
-    let sessions = get_alive_server_sessions()?;
-
-    servers.iter_mut().for_each(|server| {
-        if sessions.contains(&server.name) {
-            tag_as_dead(server);
-        }
-    });
-
-    Ok(())
 }
 
 pub fn attach(server: impl AsRef<str>) -> Result<()> {

@@ -2,7 +2,9 @@ use crate::{
     config::{self, get_expanded_servers_dir, server_or_current},
     error::{Error, Result},
     platforms::{self, Platform},
-    session,
+    session::{
+        self, get_alive_server_sessions, get_dead_server_sessions, get_server_sessions_to_living,
+    },
 };
 use reqwest::{
     blocking::{self, Response},
@@ -530,6 +532,74 @@ pub fn reinstall_with_crate() -> io::Result<()> {
         .spawn()?
         .wait()?;
 
+    Ok(())
+}
+
+fn add_last_used_tag(server: &mut ServerObject) {
+    let last_used = get_last_used(&server.name);
+
+    server
+        .tags
+        .push(match last_used.unwrap_or(LastUsed::Unknown) {
+            LastUsed::Never => "(Last used \x1b[35;1mnever\x1b[0m)".to_string(),
+            LastUsed::Unknown => "(Last used unknown)".to_string(),
+            LastUsed::Time(time) => format!("(Last used \x1b[35;1m{time}\x1b[0m ago)"),
+        });
+}
+
+fn tag_as_active(server: &mut ServerObject) {
+    server.tags.push("(\x1b[32;1mactive\x1b[0m)".to_string());
+}
+
+fn tag_as_dead(server: &mut ServerObject) {
+    server.tags.push("(\x1b[31;1mdead\x1b[0m)".to_string())
+}
+
+pub fn tag_dead(servers: &mut [ServerObject]) -> Result<()> {
+    let sessions = get_alive_server_sessions()?;
+
+    servers.iter_mut().for_each(|server| {
+        if sessions.contains(&server.name) {
+            tag_as_dead(server);
+        }
+    });
+
+    Ok(())
+}
+
+pub fn retain_active(servers: &mut Vec<ServerObject>) -> Result<()> {
+    let sessions = get_alive_server_sessions()?;
+    servers.retain(|server| sessions.contains(&server.name));
+    Ok(())
+}
+
+pub fn retain_and_tag_inactive(servers: &mut Vec<ServerObject>) -> Result<()> {
+    let sessions = get_alive_server_sessions()?;
+    servers.retain(|server| !sessions.contains(&server.name));
+    servers.iter_mut().for_each(add_last_used_tag);
+    Ok(())
+}
+
+pub fn retain_and_tag_dead(servers: &mut Vec<ServerObject>) -> Result<()> {
+    let dead_sessions = get_dead_server_sessions()?;
+    servers.retain(|server| dead_sessions.contains(&server.name));
+    servers.iter_mut().for_each(add_last_used_tag);
+    Ok(())
+}
+
+pub fn fully_tag_servers(servers: &mut [ServerObject]) -> Result<()> {
+    let mapped_sessions = get_server_sessions_to_living()?;
+
+    servers
+        .iter_mut()
+        .for_each(|server| match mapped_sessions.get(&server.name) {
+            Some(true) => tag_as_active(server),
+            Some(false) => {
+                add_last_used_tag(server);
+                tag_as_dead(server);
+            }
+            None => add_last_used_tag(server),
+        });
     Ok(())
 }
 

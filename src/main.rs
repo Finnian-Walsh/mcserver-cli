@@ -62,20 +62,18 @@ fn main() -> Result<()> {
                 .wrap_err("Failed to get servers")?;
 
             if active {
-                session::retain_active_servers(&mut servers)
-                    .wrap_err("Failed to retain active servers")?;
+                server::retain_active(&mut servers).wrap_err("Failed to retain active servers")?;
             } else if inactive {
-                session::retain_inactive_servers(&mut servers)
+                server::retain_and_tag_inactive(&mut servers)
                     .wrap_err("Failed to retain inactive servers")?;
                 if dead {
-                    session::tag_dead_servers(&mut servers)
-                        .wrap_err("Failed to tag dead servers")?;
+                    server::tag_dead(&mut servers).wrap_err("Failed to tag dead servers")?;
                 }
             } else if dead {
-                session::retain_dead_servers(&mut servers)
+                server::retain_and_tag_dead(&mut servers)
                     .wrap_err("Failed to retain dead servers")?;
             } else {
-                session::tag_servers(&mut servers).wrap_err("Failed to tag active servers")?;
+                server::fully_tag_servers(&mut servers).wrap_err("Failed to tag active servers")?;
             }
 
             for server in servers {
