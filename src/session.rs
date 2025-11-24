@@ -86,7 +86,7 @@ pub fn get_server_sessions_to_living() -> Result<HashMap<String, bool>> {
     Ok(get_server_sessions_raw_string()?
         .map(|ss| {
             ss.lines()
-                .map(|s| (s, session_is_alive(&s)))
+                .map(|s| (s, session_is_alive(s)))
                 .filter_map(|(session, living)| {
                     session_line_to_server(session).map(|server| (server, living))
                 })
