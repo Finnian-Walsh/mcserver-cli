@@ -198,11 +198,6 @@ pub fn get_jar(download_url: Url, platform: Platform) -> Result<(Response, Strin
         .map(String::from)
         .unwrap_or_else(|| format!("{platform}.jar"));
 
-    // if let Err(err) = copy_jar(&server_dir, file_name, response) {
-    //     remove_dir_with_retries(server_dir)?;
-    //     return Err(err);
-    // }
-
     Ok((response, file_name))
 }
 
