@@ -35,7 +35,7 @@ fn main() -> Result<()> {
         Commands::DeleteAllSessions { force } => if force {
             session::delete_all()
         } else {
-            session::confirm_delete_all()
+            session::delete_all_confirmed()
         }
         .wrap_err("Failed to delete all sessions")?,
         Commands::DeleteSession { session, force } => {

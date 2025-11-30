@@ -183,7 +183,7 @@ pub fn delete_all() -> Result<()> {
     Ok(())
 }
 
-pub fn confirm_delete_all() -> Result<()> {
+pub fn delete_all_confirmed() -> Result<()> {
     loop {
         print!("Delete all sessions? (y/n): ");
         io::stdout().flush()?;
