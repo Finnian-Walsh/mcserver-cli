@@ -9,6 +9,7 @@ pub struct Cli {
     pub command: Commands,
 }
 
+#[non_exhaustive]
 #[derive(Subcommand)]
 pub enum Commands {
     #[command(visible_alias = "a", about = "Attach to a server session")]
