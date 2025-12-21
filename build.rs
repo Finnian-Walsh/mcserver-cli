@@ -129,29 +129,20 @@ fn handle_static_config(cargo_manifest_dir: &Path) -> Result<Option<StaticConfig
         return Ok(None);
     }
 
-    build_log!("Static configuration file found");
-
     if !static_config_path.is_file() {
         warning!("The static configuration given is not a file");
         return Ok(None);
     }
 
-    build_log!("Static configuration is a file");
+    build_log!("Static configuration file found ({static_config_path:?})");
 
     let result = toml::from_str(
         &fs::read_to_string(static_config_path).wrap_err("Failed to read configuration file")?,
     );
 
-    match result {
-        Ok(static_config) => {
-            build_log!("Static configuration read");
-            Ok(static_config)
-        }
-        Err(err) => {
-            warning!("Failed to parse static configuration: {err}");
-            Ok(None)
-        }
-    }
+    Ok(result
+        .inspect_err(|err| warning!("Failed to parse static configuration: {err}"))
+        .unwrap_or(None))
 }
 
 fn main() -> Result<()> {
@@ -175,7 +166,7 @@ fn main() -> Result<()> {
     build_log!("Configuration path exists ({config_template_path:?})");
 
     if !config_template_path.is_file() {
-        build_log!("Configuration template should be a file",);
+        build_log!("Configuration template should be a file");
         return Err(eyre!("Invalid configuration template"));
     }
 
